@@ -2,6 +2,7 @@ package routes
 
 import (
 	atom_auth "BACKEND_SEJUTA_BERITA/atom/auth/controller"
+	atom_user "BACKEND_SEJUTA_BERITA/atom/user/controller"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -24,6 +25,12 @@ func SetupRouter() *gin.Engine {
 		auth.POST("/register", atom_auth.PostRegisterUser)
 		auth.POST("/forgot-password", atom_auth.PostForgotPassword)
 		auth.POST("/reset-password", atom_auth.PostResetPassword)
+	}
+	// User profile endpoints (require Bearer token)
+	user := router.Group("/user")
+	{
+		user.GET("/profile", atom_user.GetProfile)
+		user.PUT("/profile", atom_user.PutProfile)
 	}
 	return router
 }
