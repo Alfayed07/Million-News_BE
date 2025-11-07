@@ -2,6 +2,7 @@ package routes
 
 import (
 	atom_auth "BACKEND_SEJUTA_BERITA/atom/auth/controller"
+	atom_news "BACKEND_SEJUTA_BERITA/atom/news/controller"
 	atom_user "BACKEND_SEJUTA_BERITA/atom/user/controller"
 
 	"github.com/gin-contrib/cors"
@@ -32,5 +33,19 @@ func SetupRouter() *gin.Engine {
 		user.GET("/profile", atom_user.GetProfile)
 		user.PUT("/profile", atom_user.PutProfile)
 	}
+	// News endpoints
+	news := router.Group("/news")
+	{
+		news.GET("/top", atom_news.GetTop)
+		news.GET("/trending", atom_news.GetTrending)
+		news.GET("/search", atom_news.GetSearch)
+		news.GET("/:id", atom_news.GetByID)
+		news.GET("/:id/comments", atom_news.GetComments)
+		news.POST("/:id/comments", atom_news.PostComment)
+		news.POST("/:id/view", atom_news.PostView)
+		news.GET("", atom_news.GetList)
+	}
+	// Categories endpoint
+	router.GET("/categories", atom_news.GetCategories)
 	return router
 }
