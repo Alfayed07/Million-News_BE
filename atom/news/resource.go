@@ -44,3 +44,38 @@ func RecordViewUseCase(newsID int64) error {
     if newsID <= 0 { return errors.New("invalid id") }
     return incrementNewsView(newsID)
 }
+
+// Management use cases
+func CreateDraftUseCase(authorID int64, categoryID *int64, title, content, image string) (NewsItem, error) {
+    if authorID <= 0 || strings.TrimSpace(title) == "" || strings.TrimSpace(content) == "" {
+        return NewsItem{}, errors.New("invalid payload")
+    }
+    return insertDraft(authorID, categoryID, strings.TrimSpace(title), strings.TrimSpace(content), strings.TrimSpace(image))
+}
+
+func UpdateNewsUseCase(id int64, categoryID *int64, title, content, image *string) (NewsItem, error) {
+    if id <= 0 { return NewsItem{}, errors.New("invalid id") }
+    return updateNews(id, categoryID, title, content, image)
+}
+
+func PublishNewsUseCase(id int64) (NewsItem, error) {
+    if id <= 0 { return NewsItem{}, errors.New("invalid id") }
+    return publishNews(id)
+}
+
+func ArchiveNewsUseCase(id int64) (NewsItem, error) {
+    if id <= 0 { return NewsItem{}, errors.New("invalid id") }
+    return archiveNews(id)
+}
+
+func ListDraftsUseCase(page, limit int) (ListResponse, error) {
+    items, total, err := listDrafts(page, limit)
+    if err != nil { return ListResponse{}, err }
+    return ListResponse{Items: items, Total: total, Page: page, Limit: limit}, nil
+}
+
+func ListByAuthorUseCase(authorID int64, page, limit int) (ListResponse, error) {
+    items, total, err := listByAuthor(authorID, page, limit)
+    if err != nil { return ListResponse{}, err }
+    return ListResponse{Items: items, Total: total, Page: page, Limit: limit}, nil
+}

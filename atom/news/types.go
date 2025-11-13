@@ -6,6 +6,7 @@ type NewsItem struct {
     ID         int64     `json:"id"`
     CategoryID *int64    `json:"category_id,omitempty"`
     AuthorID   *int64    `json:"author_id,omitempty"`
+    AuthorName *string   `json:"author_name,omitempty"`
     Title      string    `json:"title"`
     Content    string    `json:"content"`
     ImageURL   string    `json:"image"`

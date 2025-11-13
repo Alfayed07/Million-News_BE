@@ -65,7 +65,8 @@ CREATE TABLE news (
 	author_id       BIGINT REFERENCES users(id)      ON DELETE SET NULL,
 	title           VARCHAR(200) NOT NULL,
 	content         TEXT         NOT NULL,
-	image           BYTEA,
+	-- Store image as a relative public path like '/uploads/berita-1.jpg'
+	image           VARCHAR(512),
 	status          news_status  NOT NULL DEFAULT 'draft',
 	created_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
 	published_at    TIMESTAMPTZ

@@ -9,14 +9,11 @@ import (
 
 func scanNewsRow(row *sql.Row) (NewsItem, error) {
     var it NewsItem
-    var imgBytes []byte
-    var catName sql.NullString
-    err := row.Scan(&it.ID, &it.CategoryID, &it.AuthorID, &it.Title, &it.Content, &imgBytes, &it.Status, &it.CreatedAt, &it.PublishedAt, &catName)
+    var imgPath, catName, authorName sql.NullString
+    err := row.Scan(&it.ID, &it.CategoryID, &it.AuthorID, &authorName, &it.Title, &it.Content, &imgPath, &it.Status, &it.CreatedAt, &it.PublishedAt, &catName)
     if catName.Valid { name := catName.String; it.Category = &name }
-    if len(imgBytes) > 0 {
-        // Assume image column stores URL bytes or raw; try to decode as string
-        it.ImageURL = string(imgBytes)
-    }
+    if imgPath.Valid { it.ImageURL = imgPath.String }
+    if authorName.Valid { n := authorName.String; it.AuthorName = &n }
     return it, err
 }
 
@@ -25,21 +22,22 @@ func scanNewsRows(rows *sql.Rows) ([]NewsItem, error) {
     defer rows.Close()
     for rows.Next() {
         var it NewsItem
-        var imgBytes []byte
-        var catName sql.NullString
-        if err := rows.Scan(&it.ID, &it.CategoryID, &it.AuthorID, &it.Title, &it.Content, &imgBytes, &it.Status, &it.CreatedAt, &it.PublishedAt, &catName); err != nil {
+        var imgPath, catName, authorName sql.NullString
+        if err := rows.Scan(&it.ID, &it.CategoryID, &it.AuthorID, &authorName, &it.Title, &it.Content, &imgPath, &it.Status, &it.CreatedAt, &it.PublishedAt, &catName); err != nil {
             return list, err
         }
         if catName.Valid { name := catName.String; it.Category = &name }
-        if len(imgBytes) > 0 { it.ImageURL = string(imgBytes) }
+        if imgPath.Valid { it.ImageURL = imgPath.String }
+        if authorName.Valid { n := authorName.String; it.AuthorName = &n }
         list = append(list, it)
     }
     return list, rows.Err()
 }
 
 const baseSelect = `
-SELECT n.id, n.category_id, n.author_id, n.title, n.content, n.image, n.status, n.created_at, n.published_at, c.name
+SELECT n.id, n.category_id, n.author_id, u.username, n.title, n.content, n.image, n.status, n.created_at, n.published_at, c.name
 FROM news n
+LEFT JOIN users u ON u.id = n.author_id
 LEFT JOIN categories c ON c.id = n.category_id
 `
 
@@ -158,6 +156,70 @@ func getNewsByID(id int64) (NewsItem, error) {
     q := baseSelect + " WHERE n.id = $1"
     row := db.QueryRow(q, id)
     return scanNewsRow(row)
+}
+
+// Insert draft news
+func insertDraft(authorID int64, categoryID *int64, title, content, image string) (NewsItem, error) {
+    db := database.PgOpenConnection(); defer db.Close()
+    const q = `
+        INSERT INTO news (author_id, category_id, title, content, image, status)
+        VALUES ($1, $2, $3, $4, $5, 'draft'::news_status)
+        RETURNING id, category_id, author_id, NULL, title, content, image, status, created_at, published_at, NULL
+    `
+    row := db.QueryRow(q, authorID, categoryID, title, content, image)
+    return scanNewsRow(row)
+}
+
+// Update news fields (only non-nil applied)
+func updateNews(id int64, categoryID *int64, title, content, image *string) (NewsItem, error) {
+    db := database.PgOpenConnection(); defer db.Close()
+    // Build dynamic updates
+    sets := []string{}
+    args := []interface{}{}
+    idx := 1
+    if categoryID != nil { sets = append(sets, fmt.Sprintf("category_id=$%d", idx)); args = append(args, *categoryID); idx++ }
+    if title != nil { sets = append(sets, fmt.Sprintf("title=$%d", idx)); args = append(args, *title); idx++ }
+    if content != nil { sets = append(sets, fmt.Sprintf("content=$%d", idx)); args = append(args, *content); idx++ }
+    if image != nil { sets = append(sets, fmt.Sprintf("image=$%d", idx)); args = append(args, *image); idx++ }
+    if len(sets) == 0 { return getNewsByID(id) }
+    args = append(args, id)
+    q := fmt.Sprintf("UPDATE news SET %s WHERE id=$%d", strings.Join(sets, ","), idx)
+    if _, err := db.Exec(q, args...); err != nil { return NewsItem{}, err }
+    return getNewsByID(id)
+}
+
+func publishNews(id int64) (NewsItem, error) {
+    db := database.PgOpenConnection(); defer db.Close()
+    if _, err := db.Exec("UPDATE news SET status='published'::news_status, published_at=COALESCE(published_at,NOW()) WHERE id=$1", id); err != nil { return NewsItem{}, err }
+    return getNewsByID(id)
+}
+
+func archiveNews(id int64) (NewsItem, error) {
+    db := database.PgOpenConnection(); defer db.Close()
+    if _, err := db.Exec("UPDATE news SET status='archived'::news_status WHERE id=$1", id); err != nil { return NewsItem{}, err }
+    return getNewsByID(id)
+}
+
+func listDrafts(page, limit int) ([]NewsItem, int64, error) {
+    db := database.PgOpenConnection(); defer db.Close()
+    if limit <= 0 { limit = 10 }; if page <= 0 { page = 1 }
+    offset := (page-1)*limit
+    q := baseSelect + " WHERE n.status='draft'::news_status ORDER BY n.created_at DESC LIMIT $1 OFFSET $2"
+    rows, err := db.Query(q, limit, offset); if err != nil { return nil,0,err }
+    items, err := scanNewsRows(rows); if err != nil { return nil,0,err }
+    var total int64; _ = db.QueryRow("SELECT COUNT(1) FROM news WHERE status='draft'::news_status").Scan(&total)
+    return items,total,nil
+}
+
+func listByAuthor(authorID int64, page, limit int) ([]NewsItem, int64, error) {
+    db := database.PgOpenConnection(); defer db.Close()
+    if limit <= 0 { limit = 10 }; if page <= 0 { page = 1 }
+    offset := (page-1)*limit
+    q := baseSelect + " WHERE n.author_id=$1 ORDER BY COALESCE(n.published_at,n.created_at) DESC LIMIT $2 OFFSET $3"
+    rows, err := db.Query(q, authorID, limit, offset); if err != nil { return nil,0,err }
+    items, err := scanNewsRows(rows); if err != nil { return nil,0,err }
+    var total int64; _ = db.QueryRow("SELECT COUNT(1) FROM news WHERE author_id=$1", authorID).Scan(&total)
+    return items,total,nil
 }
 
 // Comments queries
